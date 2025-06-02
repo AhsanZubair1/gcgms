@@ -74,7 +74,7 @@ jobs:
 
       - name: Deploy Application
         run: |
-          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=yes ec2-user@ec2-65-0-30-99.ap-south-1.compute.amazonaws.com "
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ec2-user@ec2-65-0-30-99.ap-south-1.compute.amazonaws.com "
             # Navigate to project directory
             cd MINDEF-GC-API
             
