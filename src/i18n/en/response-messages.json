@@ -1,0 +1,20 @@
+{
+  "user_registered": "Your application has been submitted for approval App No: {id}",
+  "password_set": "Your password has been set successfully!",
+  "otp_verified": "OTP verified successfully!",
+  "forget_password": "Your password has been changed successfully",
+  "pending_state": "Your application is pending. Please wait for approval to login",
+  "password_updated": "Password updated successfully!",
+  "profile_updated": "Profile updated successfully!",
+  "user_register_notification": "Your Application Has Been Submitted For Approval App No {field}",
+  "user_register_notification_title": "Application Submission",
+  "save_as_draft": "Asset Saved as Draft",
+  "save_for_approval": "Asset is waiting for approval ",
+  "publish_now": "Asset is Now Published ",
+  "asset_approve_notification": "A new {messageType} has been added to {moduleType}",
+  "asset_status_update": "Asset {messageId} is Now {status} ",
+  "user_status_rejected": "Your application has been rejected. Feel free to submit a new one whenever you're ready.",
+  "user_status_approved": "Congratulations! Your application has been accepted.",
+  "user_status_resubmit": "Your application has been marked for resubmission.Please log in to update and resubmit your application",
+  "user_status_title": "User status updated"
+}

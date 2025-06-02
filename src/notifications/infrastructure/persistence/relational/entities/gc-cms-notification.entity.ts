@@ -1,0 +1,58 @@
+import {
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+
+import { TABLES } from '@src/common/constants';
+import { MultiLingual } from '@src/common/types/multi-lingual';
+import { GcCmsUserEntity } from '@src/users/infrastructure/persistence/relational/entities/gc-cms.user.entity';
+import { EntityRelationalHelper } from '@src/utils/relational-entity-helper';
+
+@Entity({
+  name: TABLES.gcCmsNotifications,
+})
+export class GcCmsNotificationEntity extends EntityRelationalHelper {
+  @PrimaryGeneratedColumn('uuid', { name: 'id' })
+  id: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  gc_cms_user_id: string | null;
+
+  @ManyToOne(() => GcCmsUserEntity, { eager: true })
+  @JoinColumn({ name: 'gc_cms_user_id' })
+  gc_cms_user: GcCmsUserEntity;
+
+  @Column({ type: 'varchar', nullable: true, name: 'type' })
+  type: string | null;
+
+  @Column({ type: 'jsonb', name: 'title' })
+  title: MultiLingual;
+
+  @Column({ type: 'jsonb', name: 'message' })
+  message: MultiLingual;
+
+  @Column({ type: 'boolean', name: 'is_read', default: false })
+  is_read: boolean;
+
+  @Column({ type: 'jsonb', nullable: true, name: 'metadata' })
+  metadata: Record<string, string | number | boolean | null> | null;
+
+  @CreateDateColumn({
+    type: 'timestamp',
+    default: () => 'CURRENT_TIMESTAMP',
+    name: 'created_at',
+  })
+  created_at: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updated_at: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at' })
+  deleted_at: Date;
+}

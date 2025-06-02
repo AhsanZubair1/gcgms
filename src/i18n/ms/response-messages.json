@@ -1,0 +1,20 @@
+{
+  "user_registered": "Permohonan anda telah dihantar untuk kelulusan No Permohonan: {id}",
+  "password_set": "Kata laluan anda telah ditetapkan dengan jayanya!",
+  "otp_verified": "OTP disahkan dengan jayanya!",
+  "forget_password": "Kata laluan anda telah diubah dengan jayanya",
+  "pending_state": "Permohonan anda sedang diproses. Sila tunggu kelulusan untuk log masuk",
+  "password_updated": "Kata laluan berjaya dikemaskini",
+  "profile_updated": "Profil berjaya dikemaskini",
+  "user_register_notification": "Permohonan Anda Telah Dihantar Untuk Kelulusan No Apl {field}",
+  "user_register_notification_title": "Application Submission",
+
+  "save_as_draft": "Aset Disimpan sebagai Draf",
+  "save_for_approval": "Aset sedang menunggu kelulusan",
+  "publish_now": "Aset Kini Diterbitkan",
+
+  "user_status_rejected": "Permohonan anda telah ditolak. Jangan ragu untuk menyerahkan yang baharu apabila anda sudah bersedia.",
+  "user_status_approved": "tahniah! Permohonan anda telah diterima.",
+  "user_status_resubmit": "Permohonan anda telah ditandakan untuk penyerahan semula. Sila log masuk untuk mengemas kini dan menghantar semula permohonan anda.",
+  "user_status_title": "Status pengguna dikemaskini"
+}

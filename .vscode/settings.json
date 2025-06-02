@@ -1,0 +1,70 @@
+{
+  // Existing settings
+  "markdown.extension.toc.levels": "2..6",
+  "markdown.extension.orderedList.autoRenumber": false,
+  "typescript.preferences.importModuleSpecifier": "non-relative",
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "editor.formatOnSave": true,
+
+  // Base settings
+  "editor.fontSize": 18,
+  "editor.fontWeight": "normal", // Disable bold
+  "workbench.colorTheme": "Default Dark+", // Neutral base
+
+  // Multi-color syntax (no bold)
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      // BLUE - Keywords, types
+      {
+        "scope": ["keyword", "storage.type", "support.type"],
+        "settings": {
+          "foreground": "#4FC1FF" // Soft blue
+        }
+      },
+      // GREEN - Strings
+      {
+        "scope": "string",
+        "settings": {
+          "foreground": "#6A9955" // Muted green
+        }
+      },
+      // PURPLE - Imports, exports
+      {
+        "scope": ["keyword.control.import", "keyword.control.export"],
+        "settings": {
+          "foreground": "#C586C0" // Pastel purple
+        }
+      },
+      // YELLOW - Functions
+      {
+        "scope": ["entity.name.function", "support.function"],
+        "settings": {
+          "foreground": "#DCDCAA" // Light yellow
+        }
+      },
+      // ORANGE - Numbers, constants
+      {
+        "scope": ["constant.numeric", "constant.language"],
+        "settings": {
+          "foreground": "#CE9178" // Warm orange
+        }
+      },
+      // RED - Errors
+      {
+        "scope": "invalid",
+        "settings": {
+          "foreground": "#F44747" // Alert red
+        }
+      }
+    ]
+  },
+
+  // UI tweaks
+  "workbench.colorCustomizations": {
+    "editor.foreground": "#D4D4D4", // Default text (light gray)
+    "editor.background": "#1E1E1E", // Dark background
+    "editor.lineHighlightBackground": "#282828" // Line highlight
+  }
+}

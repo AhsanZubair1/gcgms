@@ -1,0 +1,624 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Blue-Green Node.js deployment with Auto Scaling and S3
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - AppSubnetIds
+          - ALBSubnetIds
+          - SSLCertificateArn
+      - Label:
+          default: "Application Configuration"
+        Parameters:
+          - S3Bucket
+          - ArtifactKey
+          - ApplicationPort
+          - ServiceName
+          - SecretsManagerName
+      - Label:
+          default: "Instance Configuration"
+        Parameters:
+          - InstanceType
+          - AmiId
+          - Ec2KeyPairName
+      - Label:
+          default: "Environment Configuration"
+        Parameters:
+          - InitialActiveEnvironment
+          - BlueEnvironmentName
+          - GreenEnvironmentName
+          - ActiveEnvSSMParameterName
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where the infrastructure will be deployed
+    Default: vpc-015597944bc83eadf
+  
+  AppSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets where the EC2 instances will be deployed
+
+  ALBSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnets where the ALB will be deployed
+  
+  S3Bucket:
+    Type: String
+    Description: S3 bucket where application artifacts are stored
+    Default: mindef-assets
+  
+  ArtifactKey:
+    Type: String
+    Description: S3 key (path) to the zip file, e.g., app/node-app-v1.zip
+    Default: app/node-app-v1.zip
+  
+  ApplicationPort:
+    Type: Number
+    Description: Port on which the application runs
+    Default: 3000
+    MinValue: 1
+    MaxValue: 65535
+  
+  ServiceName:
+    Type: String
+    Description: Name of the application service
+    Default: nodeapp
+
+  SecretsManagerName:
+    Type: String
+    Description: Name of the Secrets Manager containing environment variables
+    Default: "dev/mindef/api"
+  
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: t3.small
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+  
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Amazon Machine Image ID for the EC2 instances
+    Default: ami-04376e6ca44bacd7c
+
+  Ec2KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair
+
+  InitialActiveEnvironment:
+    Type: String
+    Description: Which environment should be active initially
+    Default: "Green"
+    AllowedValues:
+      - "Blue"
+      - "Green"
+  
+  BlueEnvironmentName:
+    Type: String
+    Description: Name for the Blue environment
+    Default: "Blue"
+  
+  GreenEnvironmentName:
+    Type: String
+    Description: Name for the Green environment
+    Default: "Green"
+  
+  ActiveEnvSSMParameterName:
+    Type: String
+    Description: SSM Parameter name to track the active environment
+    Default: "/mindef/dev/active-environment"
+  
+  ALBName:
+    Type: String
+    Description: Name for the Application Load Balancer
+    Default: "node-alb"
+  
+  BlueTargetGroupName:
+    Type: String
+    Description: Name for the Blue Target Group
+    Default: "blue-tg"
+  
+  GreenTargetGroupName:
+    Type: String
+    Description: Name for the Green Target Group
+    Default: "green-tg"
+
+  SSLCertificateArn:
+    Type: String
+    Description: ARN of the ACM SSL certificate for the load balancer
+    Default: arn:aws:acm:ap-southeast-5:337333752452:certificate/45f52ac5-8b0c-461a-993c-6b66340d49d3
+
+Resources:
+  # SSM Parameter to track active environment
+  ActiveEnvironmentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Ref ActiveEnvSSMParameterName
+      Type: String
+      Value: !Ref InitialActiveEnvironment
+      Description: "Tracks which environment (Blue/Green) is currently active"
+
+  # IAM Resources
+  NodeInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "secretsmanager:*"
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+
+  NodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [ !Ref NodeInstanceRole ]
+
+  # Automation Role for SSM
+  AutomationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ssm.amazonaws.com]
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      Policies:
+        - PolicyName: AutoScalingAndELBAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "autoscaling:UpdateAutoScalingGroup"
+                  - "autoscaling:DescribeAutoScalingGroups"
+                  - "elasticloadbalancing:ModifyListener"
+                  - "elasticloadbalancing:DescribeListeners"
+                  - "elasticloadbalancing:DescribeTargetGroups"
+                Resource: "*"
+
+  # Security Groups
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP and HTTPS
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-alb-sg"
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow from ALB and internal SSH
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow traffic from ALB
+        - IpProtocol: tcp
+          FromPort: !Ref ApplicationPort
+          ToPort: !Ref ApplicationPort
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-ec2-sg"
+
+  # Add this new resource to create the self-reference after the SG exists
+  EC2SecurityGroupSSHIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EC2SecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref EC2SecurityGroup
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-ec2-sg"
+
+  # Load Balancer Resources
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref ALBName
+      Subnets: !Ref ALBSubnetIds
+      SecurityGroups: [ !Ref ALBSecurityGroup ]
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      Tags:
+        - Key: Name
+          Value: !Ref ALBName
+
+  GreenTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: !Ref ApplicationPort
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: /
+      Name: !Sub "${AWS::StackName}-${GreenTargetGroupName}"
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-${GreenTargetGroupName}"
+        - Key: Environment
+          Value: !Ref GreenEnvironmentName
+
+  BlueTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: !Ref ApplicationPort
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: /
+      Name: !Sub "${AWS::StackName}-${BlueTargetGroupName}"
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-${BlueTargetGroupName}"
+        - Key: Environment
+          Value: !Ref BlueEnvironmentName
+
+  # Listener on port 80 to redirect HTTP to HTTPS
+  ALBHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            StatusCode: HTTP_301
+
+  # Listener on port 443 for HTTPS traffic
+  ALBHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref SSLCertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !If [IsGreenActive, !Ref GreenTargetGroup, !Ref BlueTargetGroup]
+
+  # Single Launch Template for both environments
+  NodeAppLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AWS::StackName}-node-template"
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref Ec2KeyPairName
+        IamInstanceProfile:
+          Arn: !GetAtt NodeInstanceProfile.Arn
+        SecurityGroupIds: [ !Ref EC2SecurityGroup ]
+
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # Get the latest SHA from Parameter Store
+            # LATEST_SHA=$(aws ssm get-parameter --name "/mindef/dev/latest-sha" --query "Parameter.Value" --output text)
+
+            APP_DIR="/var/www/mindef/app"
+            S3_PATH="s3://mindef-assets/code-artifacts/mindef-dev-api-721c577147a066d08009bc233b2a182d761a7b58.zip"
+            SECRET_NAME="${SecretsManagerName}"
+            USER="ec2-user"
+
+            # Download and extract
+            mkdir -p /var/www/mindef
+            cd /var/www/mindef
+
+            aws s3 cp "$S3_PATH" app.zip
+            unzip -o app.zip -d app
+            chown -R $USER:$USER app
+
+            # Now switch to ec2-user
+            sudo -i -u $USER bash <<EOF
+            cd "$APP_DIR"
+
+            # Load NVM
+            export NVM_DIR="\$HOME/.nvm"
+            source "\$NVM_DIR/nvm.sh"
+
+            # Fetch .env
+            aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query 'SecretString' --output text \
+              | jq -r 'to_entries[] | "\(.key)=\(.value | @json)"' > .env
+
+            # Install and run
+            npm install
+            pm2 delete mindef-api 2>/dev/null || true
+            pm2 start pm2.config.js
+            pm2 save
+            pm2 startup systemd -u $USER --hp /home/$USER
+            EOF
+
+            # Run the actual command printed by pm2 startup (from within root)
+            STARTUP_CMD=$(sudo -i -u $USER pm2 startup systemd -u $USER --hp /home/$USER | grep sudo)
+            eval "$STARTUP_CMD"
+
+  # Auto Scaling Groups
+  GreenAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${AWS::StackName}-${GreenEnvironmentName}AutoScalingGroup"
+      VPCZoneIdentifier: !Ref AppSubnetIds
+      MinSize: !If [IsGreenActive, 1, 0]
+      MaxSize: 2
+      DesiredCapacity: !If [IsGreenActive, 1, 0]
+      TargetGroupARNs: [ !Ref GreenTargetGroup ]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref NodeAppLaunchTemplate
+        Version: !GetAtt NodeAppLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-${GreenEnvironmentName}"
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref GreenEnvironmentName
+          PropagateAtLaunch: true
+
+  BlueAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${AWS::StackName}-${BlueEnvironmentName}AutoScalingGroup"
+      VPCZoneIdentifier: !Ref AppSubnetIds
+      MinSize: !If [IsBlueActive, 1, 0]
+      MaxSize: 2
+      DesiredCapacity: !If [IsBlueActive, 1, 0]
+      TargetGroupARNs: [ !Ref BlueTargetGroup ]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref NodeAppLaunchTemplate
+        Version: !GetAtt NodeAppLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-${BlueEnvironmentName}"
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref BlueEnvironmentName
+          PropagateAtLaunch: true
+
+  # SSM Document for Deployment
+  NodeAppDeployDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      Name: !Sub "${AWS::StackName}-DeployNodeApp"
+      DocumentType: Automation
+      Content:
+        schemaVersion: '0.3'
+        description: Deploy Node.js App from S3 using PM2
+        assumeRole: '{{ AutomationAssumeRole }}'
+        parameters:
+          AutomationAssumeRole:
+            type: String
+            default: !GetAtt AutomationRole.Arn
+          BucketName:
+            type: String
+            default: !Ref S3Bucket
+          ZipKey:
+            type: String
+            description: S3 key (path) to the zip file
+          SecretsManagerName:
+            type: String
+            default: !Ref SecretsManagerName
+          EnvironmentTag:
+            type: String
+            description: Which environment to deploy to (Blue or Green)
+            allowedValues:
+              - !Ref BlueEnvironmentName
+              - !Ref GreenEnvironmentName
+          Name:
+            type: String
+            default: !Ref AWS::StackName
+            description: Name tag for targeting instances
+        mainSteps:
+          - name: DeployNodeApp
+            action: aws:runCommand
+            nextStep: EnablePM2Startup
+            inputs:
+              DocumentName: AWS-RunShellScript
+              Targets:
+                - Key: tag:Environment
+                  Values: ['{{ EnvironmentTag }}']
+                - Key: tag:Name
+                  Values: ['{{ Name }}-{{ EnvironmentTag }}']
+              Parameters:
+                commands:
+                  - |
+                    sudo mkdir -p /var/www/mindef
+                    sudo chown -R ec2-user:ec2-user /var/www/mindef
+
+                    sudo -i -u ec2-user bash << 'EOF'
+                    export HOME=/home/ec2-user
+                    source $HOME/.nvm/nvm.sh
+
+                    cd /var/www/mindef
+                    aws s3 cp s3://{{ BucketName }}/{{ ZipKey }} app.zip
+                    unzip -o app.zip -d app
+                    cd app
+
+                    aws secretsmanager get-secret-value --secret-id "{{ SecretsManagerName }}" --query 'SecretString' --output text > /tmp/secrets.json
+                    jq -r 'to_entries | map("\(.key)=\(.value|tostring)") | .[]' /tmp/secrets.json > .env
+                    rm /tmp/secrets.json
+
+                    npm install --only=production
+
+                    export ServiceName="mindef-api"
+                    pm2 delete $ServiceName 2>/dev/null || true
+                    pm2 start pm2.config.js --name=$ServiceName
+                    pm2 save --force
+                    echo "Deployed to {{ EnvironmentTag }} environment"
+                    EOF
+
+          - name: EnablePM2Startup
+            action: aws:runCommand
+            nextStep: VerifyDeployment
+            inputs:
+              DocumentName: AWS-RunShellScript
+              Targets:
+                - Key: tag:Environment
+                  Values: ['{{ EnvironmentTag }}']
+                - Key: tag:Name
+                  Values: ['{{ Name }}-{{ EnvironmentTag }}']
+              Parameters:
+                commands:
+                  - |
+                    STARTUP_CMD=$(sudo -i -u ec2-user pm2 startup systemd -u ec2-user --hp /home/ec2-user | grep sudo)
+                    eval "$STARTUP_CMD"
+
+          - name: VerifyDeployment
+            action: aws:runCommand
+            isEnd: true
+            inputs:
+              DocumentName: AWS-RunShellScript
+              Targets:
+                - Key: tag:Environment
+                  Values: ['{{ EnvironmentTag }}']
+                - Key: tag:Name
+                  Values: ['{{ Name }}-{{ EnvironmentTag }}']
+              Parameters:
+                commands:
+                  - |
+                    sudo -i -u ec2-user bash << 'EOF'
+                    export HOME=/home/ec2-user
+                    source $HOME/.nvm/nvm.sh
+
+                    export ServiceName="mindef-api"
+                    MAX_RETRIES=5
+                    SLEEP_TIME=5
+                    COUNT=0
+
+                    while true; do
+                      if pm2 jlist | jq -e --arg name "$ServiceName" '.[] | select(.name == $name and .pm2_env.status == "online")' > /dev/null; then
+                        echo "$ServiceName is running and online in PM2."
+                        break
+                      fi
+
+                      COUNT=$((COUNT + 1))
+                      if [ $COUNT -ge $MAX_RETRIES ]; then
+                        echo "ERROR: $ServiceName is not running after $((MAX_RETRIES * SLEEP_TIME))s"
+                        exit 1
+                      fi
+
+                      echo "Waiting for $ServiceName to be online... (${COUNT}/${MAX_RETRIES})"
+                      sleep $SLEEP_TIME
+                    done
+
+                    cd /var/www/mindef/app
+                    export ApplicationPort=$(grep "^PORT=" .env | cut -d= -f2 || echo "3000")
+
+                    echo "Checking if app is responding on port $ApplicationPort..."
+                    curl -s http://localhost:$ApplicationPort/ --max-time 5 || {
+                      echo "ERROR: App not responding on port $ApplicationPort"
+                      exit 1
+                    }
+
+                    echo "Deployment successful to {{ EnvironmentTag }}!"
+                    EOF
+
+Conditions:
+  IsGreenActive: !Equals [!Ref InitialActiveEnvironment, !Ref GreenEnvironmentName]
+  IsBlueActive: !Equals [!Ref InitialActiveEnvironment, !Ref BlueEnvironmentName]
+
+Outputs:
+  ALBEndpoint:
+    Description: "Application Load Balancer DNS"
+    Value: !GetAtt ALB.DNSName
+    
+  ActiveEnvironment:
+    Description: "Currently active environment (Blue/Green)"
+    Value: !Ref ActiveEnvironmentParameter
+    
+  AutomationRoleArn:
+    Description: "Role ARN for SSM Automation"
+    Value: !GetAtt AutomationRole.Arn
+    
+  BlueAutoScalingGroupName:
+    Description: "Blue Auto Scaling Group Name"
+    Value: !Ref BlueAutoScalingGroup
+    
+  GreenAutoScalingGroupName:
+    Description: "Green Auto Scaling Group Name"
+    Value: !Ref GreenAutoScalingGroup
+    
+  BlueTargetGroupName:
+    Description: "Blue Target Group Name"
+    Value: !Ref BlueTargetGroupName
+    
+  GreenTargetGroupName:
+    Description: "Green Target Group Name"
+    Value: !Ref GreenTargetGroupName
+    
+  SSMDocumentName:
+    Description: "SSM Document Name for deployments"
+    Value: !Ref NodeAppDeployDocument
+    
+  DeploymentCommand:
+    Description: "Example command to deploy a new version"
+    Value: !Sub |
+      aws ssm start-automation-execution \
+        --document-name ${NodeAppDeployDocument} \
+        --parameters \
+        "BucketName=${S3Bucket},\
+        ZipKey=app/new-version.zip,\
+        EnvironmentTag=${BlueEnvironmentName},\
+        Name=${AWS::StackName},\
+        SecretsManagerName=${SecretsManagerName},\
+        AutomationAssumeRole=!GetAtt AutomationRole.Arn
