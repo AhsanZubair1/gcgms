@@ -41,12 +41,20 @@ jobs:
           chmod 600 ~/.ssh/ec2_key.pem
           # Verify key format
           ssh-keygen -lf ~/.ssh/ec2_key.pem
+          
+      - name: Deploy Application
+        run: |
+          echo "Trying SSH connection..."
+          ssh -vvv -i ~/.ssh/ec2_key.pem \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              ec2-user@ec2-65-0-30-99.ap-south-1.compute.amazonaws.com \
+              "echo 'SSH connection successful!'"
 
       - name: Deploy Application
         run: |
           ssh -i ~/.ssh/ec2_key.pem \
               -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
               ec2-user@ec2-65-0-30-99.ap-south-1.compute.amazonaws.com << 'EOF'
             # Navigate to project directory
             cd MINDEF-GC-API
