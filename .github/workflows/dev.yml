@@ -41,8 +41,8 @@ jobs:
           chmod 600 ~/.ssh/ec2_key.pem
           # Verify key format
           ssh-keygen -lf ~/.ssh/ec2_key.pem
-          
-      - name: Deploy Application
+
+      - name: Check Connection
         run: |
           echo "Trying SSH connection..."
           ssh -vvv -i ~/.ssh/ec2_key.pem \
