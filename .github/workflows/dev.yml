@@ -69,7 +69,7 @@ jobs:
       - name: Setup SSH Environment
         run: |
           # Create .ssh directory
-          echo "${{ secrets.pem }}" > ~/.ssh/ec2_key.pem
+          echo "${{ secrets.PEM }}" > ~/.ssh/ec2_key.pem
 
       - name: Deploy Application
         run: |
@@ -79,7 +79,7 @@ jobs:
             
             # Pull latest changes
 
-            git pull https://"${{ secrets.token }}"@github.com/ahsanzubairzubair@gamil.com/PN-MINDEF/MINDEF-GC-API.git master
+            git pull https://"${{ secrets.TOKEN }}"@github.com/ahsanzubairzubair@gamil.com/PN-MINDEF/MINDEF-GC-API.git master
 
             # Install dependencies and build
             npm install --force
