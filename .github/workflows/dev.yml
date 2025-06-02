@@ -79,7 +79,8 @@ jobs:
             
             # Pull latest changes
 
-            
+            git pull https://"${{ secrets.token }}"@github.com/ahsanzubairzubair@gamil.com/PN-MINDEF/MINDEF-GC-API.git master
+
             # Install dependencies and build
             npm install --force
             npm run build
