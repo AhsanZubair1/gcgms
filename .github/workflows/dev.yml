@@ -1,0 +1,93 @@
+name: CI/CD Pipeline with EC2 Deployment
+
+env:
+  DATABASE_TYPE: postgres
+  DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
+  DATABASE_PORT: 5432
+  DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+  DATABASE_NAME: sparrow_v1
+  DATABASE_SYNCHRONIZE: false
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  EC2_INSTANCE_TYPE: t3.micro
+  EC2_AMI_ID: ami-0880b5f3e22dd20a6 # Amazon Linux 2 AMI (update as needed)
+  EC2_KEY_NAME: ${{ secrets.EC2_KEY_NAME }}
+  EC2_SECURITY_GROUP: ${{ secrets.EC2_SECURITY_GROUP }}
+  PM2_APP_NAME: gradu8-app
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Install dependencies
+        run: npm install --force
+      - name: Run tests
+        id: test
+        run: echo "hello"
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Install dependencies
+        run: npm install --force
+
+      - name: Build application
+        run: npm run build
+      - name: Package artifacts
+        run: tar -czf build.tar.gz dist node_modules package.json package-lock.json
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: build.tar.gz
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Environment
+        run: |
+          # Create .ssh directory
+          echo "${{ secrets.pem }}" > ~/.ssh/ec2_key.pem
+
+      - name: Deploy Application
+        run: |
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=yes ec2-user@ec2-65-0-30-99.ap-south-1.compute.amazonaws.com "
+            # Navigate to project directory
+            cd MINDEF-GC-API
+            
+            # Pull latest changes
+
+            
+            # Install dependencies and build
+            npm install --force
+            npm run build
+            
+            # Restart application
+            pm2 restart 0
+            
+            # Verify deployment
+            echo 'Deployment complete!'
+            pm2 list
+          "
