@@ -9,7 +9,7 @@ env:
   DATABASE_SYNCHRONIZE: false
   AWS_REGION: ${{ secrets.AWS_REGION }}
   EC2_INSTANCE_TYPE: t3.micro
-  EC2_AMI_ID: ami-0880b5f3e22dd20a6 # Amazon Linux 2 AMI (update as needed)
+  EC2_AMI_ID: ami-0880b5f3e22dd20a6
   EC2_KEY_NAME: ${{ secrets.EC2_KEY_NAME }}
   EC2_SECURITY_GROUP: ${{ secrets.EC2_SECURITY_GROUP }}
   PM2_APP_NAME: gradu8-app
@@ -20,76 +20,48 @@ on:
   workflow_dispatch:
 
 jobs:
-  # test:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #     - name: Setup Node.js
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 18
-  #     - name: Install dependencies
-  #       run: npm install --force
-  #     - name: Run tests
-  #       id: test
-  #       run: echo "hello"
-
-  # build:
-  #   runs-on: ubuntu-latest
-  #   needs: test
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #     - name: Setup Node.js
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 18
-  #     - name: Install dependencies
-  #       run: npm install --force
-
-  #     - name: Build application
-  #       run: npm run build
-  #     - name: Package artifacts
-  #       run: tar -czf build.tar.gz dist node_modules package.json package-lock.json
-  #     - name: Upload build artifacts
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: build-artifacts
-  #         path: build.tar.gz
-
   deploy:
     runs-on: ubuntu-latest
-    # needs: build
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Create .ssh directory and write PEM file
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.PEM }}" > ~/.ssh/ec2_key.pem
-          chmod 600 ~/.ssh/ec2_key.pem  # Important for SSH key permissions
+          chmod 600 ~/.ssh/ec2_key.pem
+          # Verify key format
+          ssh-keygen -lf ~/.ssh/ec2_key.pem
 
       - name: Deploy Application
         run: |
-          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ec2-user@ec2-65-0-30-99.ap-south-1.compute.amazonaws.com "
+          ssh -i ~/.ssh/ec2_key.pem \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              ec2-user@ec2-65-0-30-99.ap-south-1.compute.amazonaws.com << 'EOF'
             # Navigate to project directory
             cd MINDEF-GC-API
             
             # Pull latest changes
-
-            git pull https://"${{ secrets.TOKEN }}"@github.com/ahsanzubairzubair@gamil.com/PN-MINDEF/MINDEF-GC-API.git master
+            git pull https://${{ secrets.TOKEN }}@github.com/PN-MINDEF/MINDEF-GC-API.git master
 
             # Install dependencies and build
             npm install --force
             npm run build
             
             # Restart application
-            pm2 restart 0
+            pm2 restart ${{ env.PM2_APP_NAME }} || pm2 start npm --name "${{ env.PM2_APP_NAME }}" -- start
             
             # Verify deployment
             echo 'Deployment complete!'
             pm2 list
-          "
+          EOF
