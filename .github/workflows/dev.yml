@@ -66,10 +66,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH Environment
+      - name: Create .ssh directory and write PEM file
         run: |
-          # Create .ssh directory
+          mkdir -p ~/.ssh
           echo "${{ secrets.PEM }}" > ~/.ssh/ec2_key.pem
+          chmod 600 ~/.ssh/ec2_key.pem  # Important for SSH key permissions
 
       - name: Deploy Application
         run: |
