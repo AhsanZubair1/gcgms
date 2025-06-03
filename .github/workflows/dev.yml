@@ -57,10 +57,10 @@ jobs:
               -o StrictHostKeyChecking=no \
               ec2-user@ec2-65-0-30-99.ap-south-1.compute.amazonaws.com << 'EOF'
             # Navigate to project directory
-            cd MINDEF-GC-API
+            cd gcgms
             
             # Pull latest changes
-            git pull https://${{ secrets.TOKEN }}@github.com/PN-MINDEF/MINDEF-GC-API.git master
+            git pull https://${{ secrets.TOKEN }}@github.com/PN-MINDEF/MINDEF-GC-API.git  master
 
             # Install dependencies and build
             npm install --force
