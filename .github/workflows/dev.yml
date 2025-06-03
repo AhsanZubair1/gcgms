@@ -55,7 +55,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/ec2_key.pem \
               -o StrictHostKeyChecking=no \
-              ec2-user@ec2-65-0-30-99.ap-south-1.compute.amazonaws.com << 'EOF'
+              ec2-user@ec2-13-208-182-176.ap-northeast-3.compute.amazonaws.com << 'EOF'
             # Navigate to project directory
             cd gcgms
             
